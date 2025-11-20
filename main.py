@@ -32,7 +32,10 @@ OUTPUT_DIR = Path("processed_images")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Modal app endpoint
-MODAL_ENDPOINT = os.getenv("MODAL_ENDPOINT", "https://vanshkhaneja2004--idm-vton-tryonmodel-api.modal.run")
+MODAL_ENDPOINT = os.getenv("MODAL_ENDPOINT")
+
+# Frontend URL for email links
+FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 # Configure Cloudinary
 cloudinary.config(
@@ -146,7 +149,7 @@ async def process_tryon_batch_with_modal(person_img: Image.Image, garment_images
         raise HTTPException(status_code=500, detail=f"Try-on processing failed: {str(e)}")
 
 
-def get_email_template(user_id: str, email: str, processed_images: Dict[str, str], plan_type: str) -> str:
+def get_email_template(user_id: str, email: str, processed_images: Dict[str, str], plan_type: str, frontend_url: str) -> str:
     """Generate HTML email template for try-on completion matching website theme"""
     
     # Generate product links/buttons
@@ -215,7 +218,7 @@ def get_email_template(user_id: str, email: str, processed_images: Dict[str, str
                                 
                                 <!-- CTA Button -->
                                 <div style="text-align: center; margin: 40px 0 30px 0;">
-                                    <a href="http://localhost:3000/products" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #ff6b9d 0%, #ff4757 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3); transition: transform 0.2s;">
+                                    <a href="{FRONTEND_URL}/products" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #ff6b9d 0%, #ff4757 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3); transition: transform 0.2s;">
                                         View All Products
                                     </a>
                                 </div>
@@ -252,7 +255,7 @@ def send_completion_email_sync(email: str, user_id: str, processed_images: Dict[
         resend.api_key = RESEND_API_KEY
         
         subject = f"Your Virtual Try-On Results Are Ready! ({plan_type.title()} Plan)"
-        html_content = get_email_template(user_id, email, processed_images, plan_type)
+        html_content = get_email_template(user_id, email, processed_images, plan_type, FRONTEND_URL)
         
         # Send email via Resend (per FastAPI docs)
         params: resend.Emails.SendParams = {
@@ -270,7 +273,7 @@ def send_completion_email_sync(email: str, user_id: str, processed_images: Dict[
         # Don't raise exception - email failure shouldn't break the API response
 
 
-def send_error_email_sync(email: str, user_id: str, error_message: str, plan_type: str):
+def send_error_email_sync(email: str, user_id: str, error_message: str, plan_type: str, frontend_url: str):
     """Send error email notification when try-on processing fails"""
     if not RESEND_API_KEY:
         logger.warning("RESEND_API_KEY not configured. Skipping error email notification.")
@@ -323,7 +326,7 @@ def send_error_email_sync(email: str, user_id: str, error_message: str, plan_typ
                 
                                 <!-- CTA Button -->
                                 <div style="text-align: center; margin: 30px 0;">
-                                    <a href="http://localhost:3000/products" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #ff6b9d 0%, #ff4757 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3);">
+                                    <a href="{frontend_url}/products" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #ff6b9d 0%, #ff4757 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3);">
                                         Try Again
                                     </a>
                                 </div>
@@ -404,7 +407,7 @@ async def process_and_send_email(user_id: str, email: str, garment_images: Dict[
         logger.error(f"Error processing try-on for user {user_id}: {error_message}")
         
         # Send error email
-        send_error_email_sync(email, user_id, error_message, plan_type)
+        send_error_email_sync(email, user_id, error_message, plan_type, FRONTEND_URL)
 
 
 async def process_virtual_tryon(user_id: str, garment_images: Dict[str, str], person_image: str) -> Dict[str, str]:

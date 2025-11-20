@@ -1,0 +1,10 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+httpx==0.25.2
+Pillow==10.2.0
+cloudinary==1.38.0
+python-dotenv==1.0.0
+resend==1.0.0
+
+now our next task is to make it liek a ireand forget even so you just return scuces here and result will be shared in email and any eroor occured then aslo a emal for like please try agin it filaed or soemthign

@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, Security
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Dict
 import uvicorn
@@ -39,14 +40,18 @@ FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 # Configure Cloudinary
 cloudinary.config(
-    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME", "dnkrqpuqk"),
-    api_key=os.getenv("CLOUDINARY_API_KEY", "145175833191735"),
-    api_secret=os.getenv("CLOUDINARY_API_SECRET", "S8EJWf4x1IEsid0NCk-HxFTZu90")
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
 )
 
 # Configure Resend
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+
+# API Key for authentication
+API_KEY = os.getenv("API_KEY")
+security = HTTPBearer()
 
 
 class TrialRequest(BaseModel):
@@ -61,6 +66,21 @@ class PremiumRequest(BaseModel):
     email: str
     garment_images: Dict[str, str]  # {"product_id": "image_url"}
     person_image: str  # Person image URL
+
+
+async def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security)):
+    """Verify API key from Bearer token"""
+    if not API_KEY:
+        logger.warning("API_KEY not configured. Authentication disabled.")
+        return True
+    
+    if credentials.credentials != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return True
 
 
 async def download_image(url: str) -> Image.Image:
@@ -446,7 +466,11 @@ async def process_virtual_tryon(user_id: str, garment_images: Dict[str, str], pe
 
 
 @app.post("/api/v1/trial")
-async def trial_virtual_tryon(request: TrialRequest, background_tasks: BackgroundTasks):
+async def trial_virtual_tryon(
+    request: TrialRequest, 
+    background_tasks: BackgroundTasks,
+    verified: bool = Depends(verify_api_key)
+):
     """Trial endpoint - max 2-3 images"""
     # Log request details
     logger.info(f"TRIAL ENDPOINT HIT")
@@ -481,7 +505,11 @@ async def trial_virtual_tryon(request: TrialRequest, background_tasks: Backgroun
 
 
 @app.post("/api/v1/premium")
-async def premium_virtual_tryon(request: PremiumRequest, background_tasks: BackgroundTasks):
+async def premium_virtual_tryon(
+    request: PremiumRequest, 
+    background_tasks: BackgroundTasks,
+    verified: bool = Depends(verify_api_key)
+):
     """Premium endpoint - more images allowed"""
     # Log request details
     logger.info(f"PREMIUM ENDPOINT HIT")

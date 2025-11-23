@@ -60,6 +60,7 @@ image = (
         "Pillow",
         "numpy",
         "packaging",
+        "sentencepiece",
     )
     .run_commands(
         # Install detectron2 - build from source for CUDA 11.8 compatibility
@@ -490,9 +491,11 @@ class TryOnModel:
 
         with torch.no_grad():
             with torch.cuda.amp.autocast():
-                prompt = "model is wearing " + garment_des
+                print(f"[run_diffusion_only] Using garment description: {garment_des[:150]}..." if len(garment_des) > 150 else f"[run_diffusion_only] Using garment description: {garment_des}")
+                prompt = "a beautiful female model wearing " + garment_des + ", professional fashion photography, high quality"
+                print(f"[run_diffusion_only] Generated prompt: {prompt[:200]}..." if len(prompt) > 200 else f"[run_diffusion_only] Generated prompt: {prompt}")
                 negative_prompt = (
-                    "monochrome, lowres, bad anatomy, worst quality, low quality"
+                    "monochrome, lowres, bad anatomy, worst quality, low quality, deformed, distorted, blurry"
                 )
                 with torch.inference_mode():
                     (
@@ -507,9 +510,10 @@ class TryOnModel:
                         negative_prompt=negative_prompt,
                     )
 
-                    prompt = "a photo of " + garment_des
+                    prompt = "a high quality photo of " + garment_des + ", fashion photography, detailed texture"
+                    print(f"[run_diffusion_only] Generated cloth prompt: {prompt[:200]}..." if len(prompt) > 200 else f"[run_diffusion_only] Generated cloth prompt: {prompt}")
                     negative_prompt = (
-                        "monochrome, lowres, bad anatomy, worst quality, low quality"
+                        "monochrome, lowres, bad anatomy, worst quality, low quality, deformed, distorted, blurry"
                     )
                     if not isinstance(prompt, self.List):
                         prompt = [prompt] * 1
@@ -534,11 +538,16 @@ class TryOnModel:
                     garm_tensor = (
                         self.tensor_transform(garm_img).unsqueeze(0).to(self.device, torch.float16)
                     )
+                    print(f"[run_diffusion_only] Using seed: {seed}")
                     generator = (
                         torch.Generator(self.device).manual_seed(int(seed))
                         if seed is not None and seed >= 0
                         else None
                     )
+                    if generator:
+                        print(f"[run_diffusion_only] Generator initialized with seed {seed}")
+                    else:
+                        print(f"[run_diffusion_only] Using random seed (generator=None)")
                     images = self.pipe(
                         prompt_embeds=prompt_embeds.to(self.device, torch.float16),
                         negative_prompt_embeds=negative_prompt_embeds.to(
@@ -603,7 +612,7 @@ class TryOnModel:
         ):
             try:
                 # Apply defaults for optional parameters
-                garment_desc = garment_description if garment_description else "garment"
+                garment_desc = garment_description if garment_description else "a beautiful sweater, professional fashion photography, high quality"
                 use_auto_mask = auto_mask if auto_mask is not None else True
                 use_auto_crop = auto_crop if auto_crop is not None else False
                 steps = denoise_steps if denoise_steps is not None else 30
@@ -653,7 +662,7 @@ class TryOnModel:
         async def run_tryon_batch(
             human_image: UploadFile = File(..., description="Human image file (required)"),
             garment_images: list[UploadFile] = File(..., description="Multiple garment image files (required)"),
-            garment_descriptions: str = Form(None, description="Comma-separated descriptions for each garment (optional)"),
+            garment_descriptions: str = Form(None, description="Comma-separated descriptions for each garment, or JSON array like '[\"desc1\", \"desc2\"]' (optional)"),
             auto_mask: bool = Form(None, description="Use auto-generated mask (optional, defaults to True)"),
             auto_crop: bool = Form(None, description="Auto-crop and resize the human image (optional, defaults to False)"),
             denoise_steps: int = Form(None, ge=20, le=40, description="Denoising steps (optional, defaults to 30)"),
@@ -663,6 +672,7 @@ class TryOnModel:
             """Process one person image with multiple garment images and return all results.
             OPTIMIZED: Preprocesses person image once, then runs diffusion for each garment."""
             import zipfile
+            import json
             
             try:
                 # Apply defaults for optional parameters
@@ -670,6 +680,7 @@ class TryOnModel:
                 use_auto_crop = auto_crop if auto_crop is not None else False
                 steps = denoise_steps if denoise_steps is not None else 30
                 use_seed = seed if seed is not None else 42
+                print(f"Received parameters: seed={use_seed}, denoise_steps={steps}, auto_mask={use_auto_mask}, auto_crop={use_auto_crop}")
                 
                 # Read human image once
                 human_img_data = await human_image.read()
@@ -690,9 +701,25 @@ class TryOnModel:
                 print("Human image preprocessing complete. Processing garments...")
 
                 # Parse garment descriptions if provided
+                # Supports both comma-separated string and JSON array format
                 descriptions_list = None
                 if garment_descriptions:
-                    descriptions_list = [desc.strip() for desc in garment_descriptions.split(",")]
+                    print(f"Received garment_descriptions parameter: {garment_descriptions[:200]}..." if len(garment_descriptions) > 200 else f"Received garment_descriptions parameter: {garment_descriptions}")
+                    try:
+                        # Try parsing as JSON array first (handles descriptions with commas)
+                        descriptions_list = json.loads(garment_descriptions)
+                        if not isinstance(descriptions_list, list):
+                            raise ValueError("JSON must be an array")
+                        print(f"Successfully parsed {len(descriptions_list)} descriptions from JSON")
+                        for idx, desc in enumerate(descriptions_list):
+                            print(f"  Parsed description {idx + 1}: {desc[:100]}..." if len(desc) > 100 else f"  Parsed description {idx + 1}: {desc}")
+                    except (json.JSONDecodeError, ValueError) as e:
+                        print(f"Failed to parse as JSON, trying comma-separated: {e}")
+                        # Fall back to comma-separated string
+                        descriptions_list = [desc.strip() for desc in garment_descriptions.split(",")]
+                        print(f"Parsed {len(descriptions_list)} descriptions from comma-separated string")
+                else:
+                    print("No garment_descriptions provided, will use defaults")
                 
                 # Process each garment image (only diffusion, no re-preprocessing)
                 zip_buffer = BytesIO()
@@ -706,11 +733,13 @@ class TryOnModel:
                             # Get description for this garment
                             if descriptions_list and idx < len(descriptions_list):
                                 garment_desc = descriptions_list[idx]
+                                print(f"Using provided description for garment {idx + 1}: {garment_desc[:100]}..." if len(garment_desc) > 100 else f"Using provided description for garment {idx + 1}: {garment_desc}")
                             else:
-                                garment_desc = "garment"  # Default if no description provided
+                                garment_desc = "a beautiful sweater, professional fashion photography, high quality"  # Default if no description provided
+                                print(f"Using DEFAULT description for garment {idx + 1} (no description provided or index out of range)")
                             
                             # Run ONLY diffusion (human image already preprocessed)
-                            print(f"Processing garment {idx + 1}/{len(garment_images)}: {garment_desc}")
+                            print(f"Processing garment {idx + 1}/{len(garment_images)} with description: {garment_desc[:100]}..." if len(garment_desc) > 100 else f"Processing garment {idx + 1}/{len(garment_images)} with description: {garment_desc}")
                             output_image = self.run_diffusion_only(
                                 preprocessed_data,
                                 garment_img,

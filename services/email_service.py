@@ -7,18 +7,44 @@ from config import RESEND_API_KEY, RESEND_FROM_EMAIL, FRONTEND_URL, LOGO_URL
 logger = logging.getLogger(__name__)
 
 
-def get_email_template(user_id: str, email: str, processed_images: Dict[str, str], plan_type: str, frontend_url: str) -> str:
+def get_email_template(user_id: str, email: str, processed_images: Dict[str, str], subscription_type: str, collection: str, frontend_url: str) -> str:
     """Generate HTML email template for try-on completion matching website theme"""
     
-    # Generate product links/buttons
-    products_html = ""
+    # Customize content based on subscription type
+    if subscription_type == "premium":
+        plan_description = "Premium subscribers get priority processing and access to exclusive collections!"
+        plan_color = "#ff6b9d"
+    else:
+        plan_description = "Try our premium plan for faster processing and more features!"
+        plan_color = "#ff6b9d"
+    
+    # Generate product images grid (no individual buttons) - using table for email compatibility
+    products_html = '<table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0;"><tr>'
+    product_count = 0
     for product_id, image_url in processed_images.items():
+        if product_count > 0 and product_count % 2 == 0:
+            products_html += '</tr><tr>'
         products_html += f"""
-        <div style="margin: 15px 0; padding: 20px; background: #fff; border-radius: 8px; border: 1px solid #f0f0f0;">
-            <p style="margin: 0 0 10px 0; color: #333; font-size: 16px; font-weight: 600;">Product: {product_id}</p>
-            <a href="{image_url}" target="_blank" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #ff6b9d 0%, #ff4757 100%); color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">View Try-On Result</a>
-        </div>
+        <td width="50%" style="padding: 10px; vertical-align: top;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background: #fff; border-radius: 8px; overflow: hidden; border: 1px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                <tr>
+                    <td style="padding: 0;">
+                        <img src="{image_url}" alt="Try-On Result for {product_id}" style="width: 100%; height: auto; display: block; max-width: 100%;" />
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; text-align: center;">
+                        <p style="margin: 0; color: #333; font-size: 14px; font-weight: 600;">{product_id}</p>
+                    </td>
+                </tr>
+            </table>
+        </td>
         """
+        product_count += 1
+    # Fill remaining cells if odd number of products
+    if product_count % 2 == 1:
+        products_html += '<td width="50%" style="padding: 10px;"></td>'
+    products_html += '</tr></table>'
     
     html = f"""
     <!DOCTYPE html>
@@ -56,28 +82,32 @@ def get_email_template(user_id: str, email: str, processed_images: Dict[str, str
                                 </p>
                                 
                                 <p style="font-size: 16px; color: #555; margin: 0 0 25px 0; line-height: 1.8;">
-                                    Fashion that learns you. We've successfully processed <strong style="color: #ff6b9d;">{len(processed_images)}</strong> garment(s) for your personalized try-on experience.
+                                    Fashion that learns you. We've successfully processed <strong style="color: #ff6b9d;">{len(processed_images)}</strong> garment(s) from the <strong style="color: #ff6b9d;">{collection}</strong> collection for your personalized try-on experience.
                                 </p>
                                 
                                 <!-- Plan Badge -->
-                                <div style="background: linear-gradient(135deg, #ffeef2 0%, #fff5f7 100%); padding: 12px 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #ff6b9d;">
+                                <div style="background: linear-gradient(135deg, #ffeef2 0%, #fff5f7 100%); padding: 12px 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid {plan_color};">
                                     <p style="margin: 0; color: #1a1a2e; font-size: 14px; font-weight: 600;">
-                                        Plan: <span style="color: #ff6b9d;">{plan_type.title()}</span> • Total Processed: <span style="color: #ff6b9d;">{len(processed_images)}</span>
+                                        Plan: <span style="color: {plan_color}; text-transform: capitalize;">{subscription_type}</span> • Collection: <span style="color: {plan_color};">{collection}</span> • Total Processed: <span style="color: {plan_color};">{len(processed_images)}</span>
                                     </p>
                                 </div>
+                                
+                                <p style="font-size: 14px; color: #666; margin: 0 0 25px 0; line-height: 1.6;">
+                                    {plan_description}
+                                </p>
                                 
                                 <!-- Try-On Results Section -->
                                 <div style="margin: 30px 0;">
                                     <h2 style="color: #1a1a2e; font-size: 22px; font-weight: 700; margin: 0 0 20px 0; padding-bottom: 10px; border-bottom: 2px solid #ffeef2;">
-                                        Your Try-On Results
+                                        Your Try-On Results from {collection}
                                     </h2>
                                     {products_html}
                                 </div>
                                 
                                 <!-- CTA Button -->
                                 <div style="text-align: center; margin: 40px 0 30px 0;">
-                                    <a href="{frontend_url}/products" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #ff6b9d 0%, #ff4757 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3); transition: transform 0.2s;">
-                                        View All Products
+                                    <a href="{frontend_url}/products?category={collection}" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #ff6b9d 0%, #ff4757 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3); transition: transform 0.2s;">
+                                        View Collection
                                     </a>
                                 </div>
                                 
@@ -102,7 +132,7 @@ def get_email_template(user_id: str, email: str, processed_images: Dict[str, str
     return html
 
 
-def send_completion_email_sync(email: str, user_id: str, processed_images: Dict[str, str], plan_type: str):
+def send_completion_email_sync(email: str, user_id: str, processed_images: Dict[str, str], subscription_type: str, collection: str):
     """Send email notification when try-on processing is complete (synchronous for background task)"""
     if not RESEND_API_KEY:
         logger.warning("RESEND_API_KEY not configured. Skipping email notification.")
@@ -112,8 +142,8 @@ def send_completion_email_sync(email: str, user_id: str, processed_images: Dict[
         # Set API key (per Resend docs)
         resend.api_key = RESEND_API_KEY
         
-        subject = f"Your Virtual Try-On Results Are Ready! ({plan_type.title()} Plan)"
-        html_content = get_email_template(user_id, email, processed_images, plan_type, FRONTEND_URL)
+        subject = f"Your Virtual Try-On Results Are Ready! ({subscription_type.title()} Plan - {collection})"
+        html_content = get_email_template(user_id, email, processed_images, subscription_type, collection, FRONTEND_URL)
         
         # Send email via Resend (per FastAPI docs)
         params: resend.Emails.SendParams = {
@@ -131,7 +161,7 @@ def send_completion_email_sync(email: str, user_id: str, processed_images: Dict[
         # Don't raise exception - email failure shouldn't break the API response
 
 
-def send_error_email_sync(email: str, user_id: str, error_message: str, plan_type: str, frontend_url: str):
+def send_error_email_sync(email: str, user_id: str, error_message: str, subscription_type: str, collection: str, frontend_url: str):
     """Send error email notification when try-on processing fails"""
     if not RESEND_API_KEY:
         logger.warning("RESEND_API_KEY not configured. Skipping error email notification.")
@@ -171,20 +201,21 @@ def send_error_email_sync(email: str, user_id: str, error_message: str, plan_typ
                 <p style="font-size: 16px; color: #555;">Hello,</p>
                 
                 <p style="font-size: 16px; color: #555;">
-                    We encountered an error while processing your virtual try-on request. 
+                    We encountered an error while processing your virtual try-on request for the <strong>{collection}</strong> collection. 
                     Please try again or contact support if the issue persists.
                 </p>
                 
                 <div style="background: #fff5f7; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ff6b9d;">
                     <p style="margin: 0; color: #1a1a2e;">
-                        <strong>Plan:</strong> <span style="color: #ff6b9d;">{plan_type.title()}</span><br>
+                        <strong>Plan:</strong> <span style="color: #ff6b9d; text-transform: capitalize;">{subscription_type}</span><br>
+                        <strong>Collection:</strong> <span style="color: #ff6b9d;">{collection}</span><br>
                         <strong>Error:</strong> {error_message}
                     </p>
                 </div>
                 
                                 <!-- CTA Button -->
                                 <div style="text-align: center; margin: 30px 0;">
-                                    <a href="{frontend_url}/products" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #ff6b9d 0%, #ff4757 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3);">
+                                    <a href="{frontend_url}/products?category={collection}" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #ff6b9d 0%, #ff4757 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3);">
                                         Try Again
                                     </a>
                                 </div>
@@ -211,7 +242,7 @@ def send_error_email_sync(email: str, user_id: str, error_message: str, plan_typ
         params: resend.Emails.SendParams = {
             "from": RESEND_FROM_EMAIL,
             "to": [email],
-            "subject": f"Virtual Try-On Processing Error ({plan_type.title()} Plan)",
+            "subject": f"Virtual Try-On Processing Error ({subscription_type.title()} Plan - {collection})",
             "html": html_content,
         }
         

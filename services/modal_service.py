@@ -1,6 +1,7 @@
 """Modal API service for virtual try-on processing"""
 import httpx
 import zipfile
+import random
 from PIL import Image
 from io import BytesIO
 from typing import Dict
@@ -14,7 +15,8 @@ logger = logging.getLogger(__name__)
 async def process_tryon_batch_with_modal(
     person_img: Image.Image, 
     garment_images: Dict[str, Image.Image], 
-    endpoint: str
+    endpoint: str,
+    garment_descriptions: Dict[str, str] = None
 ) -> Dict[str, Image.Image]:
     """Call Modal batch endpoint to process multiple garments with one person image"""
     try:
@@ -41,15 +43,44 @@ async def process_tryon_batch_with_modal(
             files.append(("garment_images", (f"{product_id}.png", garment_bytes, "image/png")))
             logger.info(f"Prepared garment_image for product {product_id}: {len(garment_bytes)} bytes")
         
+        # Generate random seed for each request (ensures unique results)
+        random_seed = random.randint(0, 2**31 - 1)
+        
         # Prepare form data (as strings, matching test file format)
         data = {
             "auto_mask": "true",
             "auto_crop": "false",
             "denoise_steps": "30",
-            "seed": "42"
+            "seed": str(random_seed)
         }
+        logger.info(f"Request parameters: seed={data['seed']} (random), denoise_steps={data['denoise_steps']}, auto_mask={data['auto_mask']}, auto_crop={data['auto_crop']}")
+        
+        # Add garment descriptions if provided
+        if garment_descriptions:
+            # Convert descriptions dict to JSON array format (matching modal_deploy.py format)
+            import json
+            # Create descriptions list in the same order as garment_files
+            descriptions_list = []
+            product_id_order = []
+            for product_id, _ in garment_files:
+                product_id_order.append(product_id)
+                if product_id in garment_descriptions:
+                    descriptions_list.append(garment_descriptions[product_id])
+                    logger.info(f"Mapped description for product {product_id}: {garment_descriptions[product_id][:80]}..." if len(garment_descriptions[product_id]) > 80 else f"Mapped description for product {product_id}: {garment_descriptions[product_id]}")
+                else:
+                    # Fallback to default if description missing
+                    default_desc = "a beautiful garment, professional fashion photography, high quality"
+                    descriptions_list.append(default_desc)
+                    logger.warning(f"No description found for product {product_id}, using default")
+            
+            # Send as JSON array string (modal_deploy.py expects this format)
+            data["garment_descriptions"] = json.dumps(descriptions_list)
+            logger.info(f"Added {len(descriptions_list)} garment descriptions to request in order: {product_id_order}")
+            for idx, (product_id, desc) in enumerate(zip(product_id_order, descriptions_list)):
+                logger.info(f"  [{idx + 1}] Product {product_id}: {desc[:100]}..." if len(desc) > 100 else f"  [{idx + 1}] Product {product_id}: {desc}")
         
         logger.info(f"Sending to Modal: 1 human_image + {len(garment_files)} garment_images")
+        logger.info(f"Request data being sent: {data}")
         
         # Make request to Modal batch endpoint (matching test file timeout)
         async with httpx.AsyncClient(timeout=1200.0) as client:  # 20 minutes like test file

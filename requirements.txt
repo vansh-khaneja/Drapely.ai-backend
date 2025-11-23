@@ -6,3 +6,4 @@ Pillow
 cloudinary
 python-dotenv
 resend
+openai

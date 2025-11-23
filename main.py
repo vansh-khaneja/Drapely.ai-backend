@@ -5,9 +5,10 @@ from fastapi.exceptions import RequestValidationError
 import uvicorn
 import logging
 from pathlib import Path
+import traceback
 
 # Import schemas
-from schemas import TrialRequest, PremiumRequest
+from schemas import TryOnRequest
 
 # Import utilities
 from utils.auth import verify_api_key
@@ -29,56 +30,19 @@ OUTPUT_DIR = Path("processed_images")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
-@app.post("/api/v1/trial")
-async def trial_virtual_tryon(
-    request: TrialRequest, 
+@app.post("/api/v1/tryon")
+async def virtual_tryon(
+    request: TryOnRequest, 
     background_tasks: BackgroundTasks,
     verified: bool = Depends(verify_api_key)
 ):
-    """Trial endpoint - max 2-3 images"""
+    """Unified try-on endpoint - accepts subscription type and collection"""
     # Log request details
-    logger.info(f"TRIAL ENDPOINT HIT")
+    logger.info(f"TRY-ON ENDPOINT HIT")
     logger.info(f"User ID: {request.user_id}")
     logger.info(f"User Email: {request.email}")
-    logger.info(f"Person Image URL: {request.person_image}")
-    logger.info(f"Garment Images ({len(request.garment_images)}):")
-    for product_id, image_url in request.garment_images.items():
-        logger.info(f"  - Product ID: {product_id}, Image URL: {image_url}")
-    
-    total_images = len(request.garment_images) + 1  # +1 for person_image
-    
-    if total_images > 3:
-        raise HTTPException(status_code=400, detail="Trial plan: max 3 total images allowed (garment + person)")
-    
-    # Return success immediately (fire and forget)
-    # Processing will happen in background and email will be sent when done
-    background_tasks.add_task(
-        process_and_send_email,
-        request.user_id,
-        request.email,
-        request.garment_images,
-        request.person_image,
-        "trial"
-    )
-    
-    return {
-        "success": True,
-        "message": "Request received. Processing in background. You will receive an email with results shortly.",
-        "user_id": request.user_id
-    }
-
-
-@app.post("/api/v1/premium")
-async def premium_virtual_tryon(
-    request: PremiumRequest, 
-    background_tasks: BackgroundTasks,
-    verified: bool = Depends(verify_api_key)
-):
-    """Premium endpoint - more images allowed"""
-    # Log request details
-    logger.info(f"PREMIUM ENDPOINT HIT")
-    logger.info(f"User ID: {request.user_id}")
-    logger.info(f"User Email: {request.email}")
+    logger.info(f"Subscription Type: {request.subscription_type}")
+    logger.info(f"Collection: {request.collection}")
     logger.info(f"Person Image URL: {request.person_image}")
     logger.info(f"Garment Images ({len(request.garment_images)}):")
     for product_id, image_url in request.garment_images.items():
@@ -92,21 +56,36 @@ async def premium_virtual_tryon(
         request.email,
         request.garment_images,
         request.person_image,
-        "premium"
+        request.subscription_type,
+        request.collection
     )
     
     return {
         "success": True,
         "message": "Request received. Processing in background. You will receive an email with results shortly.",
-        "user_id": request.user_id
+        "user_id": request.user_id,
+        "subscription_type": request.subscription_type,
+        "collection": request.collection
     }
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"Validation error: {exc.errors()}")
     return JSONResponse(
         status_code=422,
         content={"detail": exc.errors(), "body": str(exc.body)}
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle any unhandled exceptions"""
+    error_traceback = traceback.format_exc()
+    logger.error(f"Unhandled exception: {str(exc)}\n{error_traceback}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"}
     )
 
 

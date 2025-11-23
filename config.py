@@ -23,6 +23,9 @@ RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 # API Key for authentication
 API_KEY = os.getenv("API_KEY")
 
+# OpenAI configuration
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 # Logo URL
 LOGO_URL = "https://res.cloudinary.com/dnkrqpuqk/image/upload/v1763804717/logo2.2k_orepqx.png"
 

@@ -13,7 +13,8 @@ async def process_and_send_email(
     email: str, 
     garment_images: Dict[str, str], 
     person_image: str, 
-    plan_type: str
+    subscription_type: str,
+    collection: str
 ):
     """Process try-on and send email (runs in background)"""
     try:
@@ -21,12 +22,12 @@ async def process_and_send_email(
         logger.info(f"Processing completed for user: {user_id}")
         
         # Send completion email
-        send_completion_email_sync(email, user_id, processed_images, plan_type)
+        send_completion_email_sync(email, user_id, processed_images, subscription_type, collection)
         
     except Exception as e:
         error_message = str(e)
         logger.error(f"Error processing try-on for user {user_id}: {error_message}")
         
         # Send error email
-        send_error_email_sync(email, user_id, error_message, plan_type, FRONTEND_URL)
+        send_error_email_sync(email, user_id, error_message, subscription_type, collection, FRONTEND_URL)
 
